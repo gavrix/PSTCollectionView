@@ -1653,6 +1653,7 @@ static void PSTCollectionViewCommonSetup(PSTCollectionView *_self) {
         }
     }
     
+    NSDictionary* previouslyVisibleViewsDict = _allVisibleViewsDict;
     _allVisibleViewsDict = newAllVisibleView;
     
     for(NSDictionary *animation in animations) {
@@ -1684,42 +1685,35 @@ static void PSTCollectionViewCommonSetup(PSTCollectionView *_self) {
         // CATransaction's completionHandler but I simply don't know where to get that flag.
         
         [CATransaction setCompletionBlock:^{
-             // deleted views are not removed from the collectionView. By this point
-             // _allVisibleViewsDict has already had the view removed, and
-             // layoutAttributesForElementsInRect: only returns what is expected, not
-             // what is actually a subView of the collectionView.
-             // This is probably not the best fix, but does cleanup the now hidden views
-             // in the case of a delete, in the case of an update, there is odd behavior
-             // with deleted and inserted views that end up with no view at all.
-             //         NSMutableSet *set = [NSMutableSet set];
-             //         NSArray *visibleItems = [_layout layoutAttributesForElementsInRect:self.visibleBoundRects];
-             //         for(PSTCollectionViewLayoutAttributes *attrs in visibleItems)
-             //             [set addObject: [PSTCollectionViewItemKey collectionItemKeyForLayoutAttributes:attrs]];
-             //
-             //         NSMutableSet *toRemove =  [NSMutableSet set];
-             //         for(PSTCollectionViewItemKey *key in [_allVisibleViewsDict keyEnumerator]) {
-             //             if(![set containsObject:key]) {
-             //                 [self reuseCell:_allVisibleViewsDict[key]];
-             //                 [toRemove addObject:key];
-             //             }
-             //         }
-             //         for(id key in toRemove)
-             //             [_allVisibleViewsDict removeObjectForKey:key];
-             NSArray *visibleViews = [newAllVisibleView allValues];
-             [self.subviews enumerateObjectsUsingBlock:^(PSTCollectionViewCell *obj, NSUInteger idx, BOOL *stop) {
-                 if ([obj isKindOfClass: [PSTCollectionViewCell class]] && [visibleViews containsObject: obj] == NO) {
-                     [self reuseCell: obj];
+
+            // iterate through all the views previously visible
+            // and search for those which are no more visible
+            
+            [previouslyVisibleViewsDict enumerateKeysAndObjectsUsingBlock:
+             ^(PSTCollectionViewItemKey *key, PSTCollectionReusableView* view, BOOL *stop) {
+                 if (![_allVisibleViewsDict objectForKey:key]) {
+                     // view for this key isn't visible any more, so it
+                     // should be reused
+                     if(key.type == PSTCollectionViewItemTypeCell) {
+                         [self reuseCell: (PSTCollectionViewCell*)view];
+                     } else if (key.type == PSTCollectionViewItemTypeSupplementaryView) {
+                         [self reuseSupplementaryView:view];
+                     }
+                     
                  }
+
              }];
-             
-             _collectionViewFlags.updatingLayout = NO;
-         }];
-                
+            
+            _collectionViewFlags.updatingLayout = NO;
+            
+        }];
+         
         for (NSDictionary *animation in animations) {
             PSTCollectionReusableView* view = animation[@"view"];
             PSTCollectionViewLayoutAttributes* attrs = animation[@"newLayoutInfos"];
             [view applyLayoutAttributes:attrs];
         }
+        [CATransaction commit];
     } completion:^(BOOL finished) {
         if(_updateCompletionHandler) {
             _updateCompletionHandler(finished);
